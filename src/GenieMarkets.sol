@@ -238,12 +238,14 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
             betType == BetType.OpenTrio ||
             betType == BetType.Pair
         ) {
-            if (round.phase != RoundPhase.OpenBetting)
+            if (round.phase != RoundPhase.OpenBetting) {
                 revert WrongPhase(round.phase, RoundPhase.OpenBetting);
+            }
             if (block.timestamp >= round.openCutoff) revert PastCutoff();
         } else {
-            if (round.phase != RoundPhase.CloseBetting)
+            if (round.phase != RoundPhase.CloseBetting) {
                 revert WrongPhase(round.phase, RoundPhase.CloseBetting);
+            }
             if (block.timestamp >= round.closeCutoff) revert PastCutoff();
         }
 
@@ -273,7 +275,14 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
             })
         );
 
-        emit BetPlaced(roundId, betIndex, msg.sender, betType, pick, wagerAmount);
+        emit BetPlaced(
+            roundId,
+            betIndex,
+            msg.sender,
+            betType,
+            pick,
+            wagerAmount
+        );
     }
 
     // ──────────────────────────────────────────────
@@ -283,8 +292,9 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     /// @notice Request the Open draw. Callable by anyone once the open cutoff has elapsed.
     function requestOpenDraw(uint256 roundId) external {
         Round storage round = s_rounds[roundId];
-        if (round.phase != RoundPhase.OpenBetting)
+        if (round.phase != RoundPhase.OpenBetting) {
             revert WrongPhase(round.phase, RoundPhase.OpenBetting);
+        }
         if (block.timestamp < round.openCutoff) revert CutoffNotReached();
 
         round.phase = RoundPhase.OpenPending;
@@ -312,8 +322,9 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     /// @notice Request the Close draw. Callable by anyone once the close cutoff has elapsed.
     function requestCloseDraw(uint256 roundId) external {
         Round storage round = s_rounds[roundId];
-        if (round.phase != RoundPhase.CloseBetting)
+        if (round.phase != RoundPhase.CloseBetting) {
             revert WrongPhase(round.phase, RoundPhase.CloseBetting);
+        }
         if (block.timestamp < round.closeCutoff) revert CutoffNotReached();
 
         round.phase = RoundPhase.ClosePending;
@@ -402,7 +413,8 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
         ) {
             revert RoundNotSettledOrPartial();
         }
-        if (block.timestamp > round.settledAt + CLAIM_PERIOD) revert ClaimExpired();
+        if (block.timestamp > round.settledAt + CLAIM_PERIOD)
+            revert ClaimExpired();
 
         Bet storage bet = s_roundBets[roundId][betIndex];
         if (bet.player != msg.sender) revert NotYourBet();
@@ -439,7 +451,8 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
         ) {
             revert RoundNotCancelledOrPartial();
         }
-        if (block.timestamp > round.settledAt + CLAIM_PERIOD) revert ClaimExpired();
+        if (block.timestamp > round.settledAt + CLAIM_PERIOD)
+            revert ClaimExpired();
 
         Bet storage bet = s_roundBets[roundId][betIndex];
         if (bet.player != msg.sender) revert NotYourBet();
@@ -472,15 +485,17 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
         Round storage round = s_rounds[roundId];
 
         if (round.phase == RoundPhase.OpenPending) {
-            if (block.timestamp <= round.openCutoff + EMERGENCY_TIMEOUT)
+            if (block.timestamp <= round.openCutoff + EMERGENCY_TIMEOUT) {
                 revert NotStaleYet();
+            }
             round.phase = RoundPhase.Cancelled;
             round.settledAt = uint40(block.timestamp);
             emit RoundCancelled(roundId);
             _initNextRound();
         } else if (round.phase == RoundPhase.ClosePending) {
-            if (block.timestamp <= round.closeCutoff + EMERGENCY_TIMEOUT)
+            if (block.timestamp <= round.closeCutoff + EMERGENCY_TIMEOUT) {
                 revert NotStaleYet();
+            }
             round.phase = RoundPhase.PartiallySettled;
             round.settledAt = uint40(block.timestamp);
             emit RoundPartiallySettled(roundId);
@@ -576,7 +591,9 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
         Round storage round = s_rounds[nextId];
         round.phase = RoundPhase.OpenBetting;
         round.openCutoff = uint40(block.timestamp + s_openDuration);
-        round.closeCutoff = uint40(block.timestamp + s_openDuration + s_closeDuration);
+        round.closeCutoff = uint40(
+            block.timestamp + s_openDuration + s_closeDuration
+        );
 
         emit RoundInitialized(nextId, round.openCutoff, round.closeCutoff);
     }
@@ -588,10 +605,12 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
         uint256 wagerAmount = uint256(bet.amount);
 
         if (bet.betType == BetType.OpenSingle) {
-            return bet.pick == round.openSingle ? wagerAmount * SINGLE_PAYOUT : 0;
+            return
+                bet.pick == round.openSingle ? wagerAmount * SINGLE_PAYOUT : 0;
         }
         if (bet.betType == BetType.CloseSingle) {
-            return bet.pick == round.closeSingle ? wagerAmount * SINGLE_PAYOUT : 0;
+            return
+                bet.pick == round.closeSingle ? wagerAmount * SINGLE_PAYOUT : 0;
         }
         if (bet.betType == BetType.Pair) {
             return bet.pick == round.pairResult ? wagerAmount * PAIR_PAYOUT : 0;
@@ -600,18 +619,28 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
         // Trio bets
         uint16 winningTrio;
         if (bet.betType == BetType.OpenTrio) {
-            winningTrio = GenieMath.encodeTrio(round.openD1, round.openD2, round.openD3);
+            winningTrio = GenieMath.encodeTrio(
+                round.openD1,
+                round.openD2,
+                round.openD3
+            );
         } else {
             // CloseTrio
-            winningTrio = GenieMath.encodeTrio(round.closeD1, round.closeD2, round.closeD3);
+            winningTrio = GenieMath.encodeTrio(
+                round.closeD1,
+                round.closeD2,
+                round.closeD3
+            );
         }
 
         if (bet.pick != winningTrio) return 0;
 
         // Trio matched — payout depends on trio type
         GenieMath.TrioType trioType = GenieMath.trioTypeFromPick(bet.pick);
-        if (trioType == GenieMath.TrioType.Jackpot) return wagerAmount * JACKPOT_TRIO_PAYOUT;
-        if (trioType == GenieMath.TrioType.Twin) return wagerAmount * TWIN_TRIO_PAYOUT;
+        if (trioType == GenieMath.TrioType.Jackpot)
+            return wagerAmount * JACKPOT_TRIO_PAYOUT;
+        if (trioType == GenieMath.TrioType.Twin)
+            return wagerAmount * TWIN_TRIO_PAYOUT;
         return wagerAmount * UNIQUE_TRIO_PAYOUT;
     }
 }
