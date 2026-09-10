@@ -1,52 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, console} from "forge-std/Test.sol";
 import {GenieMarkets} from "../src/GenieMarkets.sol";
 import {GenieMath} from "../src/GenieMath.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
-
-// ──────────────────────────────────────────────
-//  Mocks
-// ──────────────────────────────────────────────
-
-/// @dev Minimal mock USDC (6 decimals).
-contract MockUSDC is ERC20 {
-    constructor() ERC20("USD Coin", "USDC") {}
-
-    function decimals() public pure override returns (uint8) {
-        return 6;
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-}
-
-/// @dev Minimal mock VRF coordinator that accepts requests and lets tests trigger fulfillment.
-contract MockVRFCoordinator {
-    uint256 private _requestId;
-
-    function requestRandomWords(VRFV2PlusClient.RandomWordsRequest calldata) external returns (uint256) {
-        return ++_requestId;
-    }
-
-    /// @dev Simulate VRF fulfillment by calling rawFulfillRandomWords on the consumer.
-    function fulfillRandomWords(uint256 requestId, address consumer, uint256 rawNumber) external {
-        uint256[] memory words = new uint256[](1);
-        words[0] = rawNumber;
-        // Call rawFulfillRandomWords — it checks msg.sender == coordinator
-        (bool ok,) =
-            consumer.call(abi.encodeWithSignature("rawFulfillRandomWords(uint256,uint256[])", requestId, words));
-        require(ok, "VRF fulfillment failed");
-    }
-
-    function lastRequestId() external view returns (uint256) {
-        return _requestId;
-    }
-}
+import {MockUSDC} from "./mocks/MockUSDC.sol";
+import {MockVRFCoordinator} from "./mocks/MockVRFCoordinator.sol";
 
 // ──────────────────────────────────────────────
 //  Test Contract
@@ -140,6 +99,12 @@ contract GenieMarketsTest is Test {
         uint256 roundId = markets.s_currentRoundId();
         assertEq(roundId, 1);
 
+        uint256 aliceInitialBal = usdc.balanceOf(alice);
+        uint256 bobInitialBal = usdc.balanceOf(bob);
+        console.log("--- Round 1 Start ---");
+        console.log("Alice initial balance:", aliceInitialBal / 1e6);
+        console.log("Bob initial balance:", bobInitialBal / 1e6);
+
         // Phase: OpenBetting — place Open Single bet on digit 6
         // VRF raw = 123 → sorted 123 → single = (1+2+3)%10 = 6
         _placeBet(alice, roundId, GenieMarkets.BetType.OpenSingle, 6, uint128(BET_AMOUNT));
@@ -169,13 +134,18 @@ contract GenieMarketsTest is Test {
 
         // Alice's Open Single bet on 6 should win (9x)
         uint256 payout = markets.checkPayout(roundId, 0);
+        console.log("Alice Open Single payout:", payout / 1e6);
         assertEq(payout, BET_AMOUNT * 9);
 
         // Bob's Pair bet on 64 should lose (pair result is 65)
-        assertEq(markets.checkPayout(roundId, 1), 0);
+        uint256 bobPayout = markets.checkPayout(roundId, 1);
+        console.log("Bob Pair payout (loss):", bobPayout / 1e6);
+        assertEq(bobPayout, 0);
 
         // Alice's Close Single bet on 5 should win (9x)
-        assertEq(markets.checkPayout(roundId, 2), BET_AMOUNT * 9);
+        uint256 aliceClosePayout = markets.checkPayout(roundId, 2);
+        console.log("Alice Close Single payout:", aliceClosePayout / 1e6);
+        assertEq(aliceClosePayout, BET_AMOUNT * 9);
 
         // Claim winnings
         uint256 aliceBalBefore = usdc.balanceOf(alice);
@@ -184,6 +154,24 @@ contract GenieMarketsTest is Test {
         vm.prank(alice);
         markets.claimWinnings(roundId, 2);
         assertEq(usdc.balanceOf(alice), aliceBalBefore + BET_AMOUNT * 9 * 2);
+
+        uint256 aliceFinalBal = usdc.balanceOf(alice);
+        uint256 bobFinalBal = usdc.balanceOf(bob);
+        console.log("--- Round 1 End ---");
+        console.log("Alice final balance:", aliceFinalBal / 1e6);
+        console.log("Bob final balance:", bobFinalBal / 1e6);
+
+        if (aliceFinalBal > aliceInitialBal) {
+            console.log("Alice Net Profit:", (aliceFinalBal - aliceInitialBal) / 1e6);
+        } else {
+            console.log("Alice Net Loss:", (aliceInitialBal - aliceFinalBal) / 1e6);
+        }
+
+        if (bobFinalBal > bobInitialBal) {
+            console.log("Bob Net Profit:", (bobFinalBal - bobInitialBal) / 1e6);
+        } else {
+            console.log("Bob Net Loss:", (bobInitialBal - bobFinalBal) / 1e6);
+        }
 
         // Next round should be initialized
         assertEq(markets.s_currentRoundId(), 2);
@@ -201,6 +189,9 @@ contract GenieMarketsTest is Test {
         _advancePastOpenCutoff();
         _requestAndFulfillOpenDraw(roundId, 213);
 
+        _advancePastCloseCutoff();
+        _requestAndFulfillCloseDraw(roundId, 456);
+
         // Open trio is 123 → alice wins 140x
         assertEq(markets.checkPayout(roundId, 0), BET_AMOUNT * 140);
     }
@@ -213,6 +204,9 @@ contract GenieMarketsTest is Test {
         _advancePastOpenCutoff();
         _requestAndFulfillOpenDraw(roundId, 211);
 
+        _advancePastCloseCutoff();
+        _requestAndFulfillCloseDraw(roundId, 456);
+
         assertEq(markets.checkPayout(roundId, 0), BET_AMOUNT * 280);
     }
 
@@ -224,6 +218,9 @@ contract GenieMarketsTest is Test {
         _advancePastOpenCutoff();
         _requestAndFulfillOpenDraw(roundId, 555);
 
+        _advancePastCloseCutoff();
+        _requestAndFulfillCloseDraw(roundId, 456);
+
         assertEq(markets.checkPayout(roundId, 0), BET_AMOUNT * 600);
     }
 
@@ -234,6 +231,9 @@ contract GenieMarketsTest is Test {
 
         _advancePastOpenCutoff();
         _requestAndFulfillOpenDraw(roundId, 310);
+
+        _advancePastCloseCutoff();
+        _requestAndFulfillCloseDraw(roundId, 456);
 
         // Should win — 310 sorts to 130
         assertEq(markets.checkPayout(roundId, 0), BET_AMOUNT * 140);

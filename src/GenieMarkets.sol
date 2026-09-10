@@ -3,18 +3,10 @@ pragma solidity ^0.8.24;
 
 import {GenieMath} from "./GenieMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {
-    SafeERC20
-} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {
-    ReentrancyGuard
-} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {
-    VRFConsumerBaseV2Plus
-} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
-import {
-    VRFV2PlusClient
-} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 
 /// @title GenieMarkets
 /// @notice Onchain daily number prediction protocol with Chainlink VRF randomness.
@@ -116,49 +108,19 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     // ──────────────────────────────────────────────
 
     event BetPlaced(
-        uint256 indexed roundId,
-        uint256 betIndex,
-        address indexed player,
-        BetType betType,
-        uint16 pick,
-        uint128 amount
+        uint256 indexed roundId, uint256 betIndex, address indexed player, BetType betType, uint16 pick, uint128 amount
     );
-    event DrawRequested(
-        uint256 indexed roundId,
-        bool isClose,
-        uint256 vrfRequestId
-    );
-    event DrawFulfilled(
-        uint256 indexed roundId,
-        bool isClose,
-        uint8 d1,
-        uint8 d2,
-        uint8 d3,
-        uint8 single
-    );
+    event DrawRequested(uint256 indexed roundId, bool isClose, uint256 vrfRequestId);
+    event DrawFulfilled(uint256 indexed roundId, bool isClose, uint8 d1, uint8 d2, uint8 d3, uint8 single);
     event RoundSettled(uint256 indexed roundId, uint8 pairResult);
     event RoundPartiallySettled(uint256 indexed roundId);
     event RoundCancelled(uint256 indexed roundId);
-    event WinningsClaimed(
-        uint256 indexed roundId,
-        uint256 betIndex,
-        address indexed player,
-        uint256 payout
-    );
-    event RefundClaimed(
-        uint256 indexed roundId,
-        uint256 betIndex,
-        address indexed player,
-        uint256 amount
-    );
+    event WinningsClaimed(uint256 indexed roundId, uint256 betIndex, address indexed player, uint256 payout);
+    event RefundClaimed(uint256 indexed roundId, uint256 betIndex, address indexed player, uint256 amount);
     event BankrollDeposited(address indexed depositor, uint256 amount);
     event BankrollWithdrawn(address indexed owner, uint256 amount);
     event DurationsUpdated(uint32 openDuration, uint32 closeDuration);
-    event RoundInitialized(
-        uint256 indexed roundId,
-        uint40 openCutoff,
-        uint40 closeCutoff
-    );
+    event RoundInitialized(uint256 indexed roundId, uint40 openCutoff, uint40 closeCutoff);
 
     // ──────────────────────────────────────────────
     //  Errors
@@ -206,9 +168,7 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
         Round storage round = s_rounds[1];
         round.phase = RoundPhase.OpenBetting;
         round.openCutoff = uint40(block.timestamp + _openDuration);
-        round.closeCutoff = uint40(
-            block.timestamp + _openDuration + _closeDuration
-        );
+        round.closeCutoff = uint40(block.timestamp + _openDuration + _closeDuration);
 
         emit RoundInitialized(1, round.openCutoff, round.closeCutoff);
     }
@@ -222,22 +182,13 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     /// @param betType Which market to bet on.
     /// @param pick The predicted number (range depends on betType).
     /// @param wagerAmount USDC amount to wager (6 decimals). Caller must have approved this contract.
-    function placeBet(
-        uint256 roundId,
-        BetType betType,
-        uint16 pick,
-        uint128 wagerAmount
-    ) external nonReentrant {
+    function placeBet(uint256 roundId, BetType betType, uint16 pick, uint128 wagerAmount) external nonReentrant {
         if (wagerAmount == 0) revert ZeroAmount();
 
         Round storage round = s_rounds[roundId];
 
         // Phase + cutoff validation
-        if (
-            betType == BetType.OpenSingle ||
-            betType == BetType.OpenTrio ||
-            betType == BetType.Pair
-        ) {
+        if (betType == BetType.OpenSingle || betType == BetType.OpenTrio || betType == BetType.Pair) {
             if (round.phase != RoundPhase.OpenBetting) {
                 revert WrongPhase(round.phase, RoundPhase.OpenBetting);
             }
@@ -266,23 +217,10 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
         // Store bet
         uint256 betIndex = s_roundBets[roundId].length;
         s_roundBets[roundId].push(
-            Bet({
-                player: msg.sender,
-                betType: betType,
-                pick: pick,
-                amount: wagerAmount,
-                claimed: false
-            })
+            Bet({player: msg.sender, betType: betType, pick: pick, amount: wagerAmount, claimed: false})
         );
 
-        emit BetPlaced(
-            roundId,
-            betIndex,
-            msg.sender,
-            betType,
-            pick,
-            wagerAmount
-        );
+        emit BetPlaced(roundId, betIndex, msg.sender, betType, pick, wagerAmount);
     }
 
     // ──────────────────────────────────────────────
@@ -306,9 +244,7 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
                 requestConfirmations: VRF_REQUEST_CONFIRMATIONS,
                 callbackGasLimit: i_callbackGasLimit,
                 numWords: VRF_NUM_WORDS,
-                extraArgs: VRFV2PlusClient._argsToBytes(
-                    VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
-                )
+                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: false}))
             })
         );
 
@@ -336,9 +272,7 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
                 requestConfirmations: VRF_REQUEST_CONFIRMATIONS,
                 callbackGasLimit: i_callbackGasLimit,
                 numWords: VRF_NUM_WORDS,
-                extraArgs: VRFV2PlusClient._argsToBytes(
-                    VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
-                )
+                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: false}))
             })
         );
 
@@ -354,10 +288,7 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     // ──────────────────────────────────────────────
 
     /// @dev Called by VRF coordinator. O(1) — never iterates bets.
-    function fulfillRandomWords(
-        uint256 requestId,
-        uint256[] calldata randomWords
-    ) internal override {
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
         uint256 roundId = s_vrfRequestToRound[requestId];
         bool isClose = s_vrfRequestIsClose[requestId];
         Round storage round = s_rounds[roundId];
@@ -402,19 +333,14 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     /// @notice Claim winnings for a specific bet. Pull-based — winners must call this.
     /// @param roundId The settled round.
     /// @param betIndex Index of the bet in the round's bet array.
-    function claimWinnings(
-        uint256 roundId,
-        uint256 betIndex
-    ) external nonReentrant {
+    function claimWinnings(uint256 roundId, uint256 betIndex) external nonReentrant {
         Round storage round = s_rounds[roundId];
-        if (
-            round.phase != RoundPhase.Settled &&
-            round.phase != RoundPhase.PartiallySettled
-        ) {
+        if (round.phase != RoundPhase.Settled && round.phase != RoundPhase.PartiallySettled) {
             revert RoundNotSettledOrPartial();
         }
-        if (block.timestamp > round.settledAt + CLAIM_PERIOD)
+        if (block.timestamp > round.settledAt + CLAIM_PERIOD) {
             revert ClaimExpired();
+        }
 
         Bet storage bet = s_roundBets[roundId][betIndex];
         if (bet.player != msg.sender) revert NotYourBet();
@@ -422,10 +348,7 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
         // In PartiallySettled, only open-side bets are claimable
         if (round.phase == RoundPhase.PartiallySettled) {
-            if (
-                bet.betType != BetType.OpenSingle &&
-                bet.betType != BetType.OpenTrio
-            ) {
+            if (bet.betType != BetType.OpenSingle && bet.betType != BetType.OpenTrio) {
                 revert OnlyOpenSideClaimable();
             }
         }
@@ -440,19 +363,14 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     }
 
     /// @notice Claim a refund for a bet in a cancelled or partially-settled round.
-    function claimRefund(
-        uint256 roundId,
-        uint256 betIndex
-    ) external nonReentrant {
+    function claimRefund(uint256 roundId, uint256 betIndex) external nonReentrant {
         Round storage round = s_rounds[roundId];
-        if (
-            round.phase != RoundPhase.Cancelled &&
-            round.phase != RoundPhase.PartiallySettled
-        ) {
+        if (round.phase != RoundPhase.Cancelled && round.phase != RoundPhase.PartiallySettled) {
             revert RoundNotCancelledOrPartial();
         }
-        if (block.timestamp > round.settledAt + CLAIM_PERIOD)
+        if (block.timestamp > round.settledAt + CLAIM_PERIOD) {
             revert ClaimExpired();
+        }
 
         Bet storage bet = s_roundBets[roundId][betIndex];
         if (bet.player != msg.sender) revert NotYourBet();
@@ -460,11 +378,7 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
         // In PartiallySettled, only close-side + Pair bets are refundable
         if (round.phase == RoundPhase.PartiallySettled) {
-            if (
-                bet.betType != BetType.CloseSingle &&
-                bet.betType != BetType.CloseTrio &&
-                bet.betType != BetType.Pair
-            ) {
+            if (bet.betType != BetType.CloseSingle && bet.betType != BetType.CloseTrio && bet.betType != BetType.Pair) {
                 revert OnlyCloseSideRefundable();
             }
         }
@@ -524,10 +438,7 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     }
 
     /// @notice Update global round durations. Only affects future rounds.
-    function setDurations(
-        uint32 _openDuration,
-        uint32 _closeDuration
-    ) external onlyOwner {
+    function setDurations(uint32 _openDuration, uint32 _closeDuration) external onlyOwner {
         require(_openDuration > 0 && _closeDuration > 0, "Zero duration");
         s_openDuration = _openDuration;
         s_closeDuration = _closeDuration;
@@ -544,40 +455,22 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     }
 
     /// @notice Get a specific bet's details.
-    function getBet(
-        uint256 roundId,
-        uint256 betIndex
-    )
+    function getBet(uint256 roundId, uint256 betIndex)
         external
         view
-        returns (
-            address player,
-            BetType betType,
-            uint16 pick,
-            uint128 amount,
-            bool claimed
-        )
+        returns (address player, BetType betType, uint16 pick, uint128 amount, bool claimed)
     {
         Bet storage b = s_roundBets[roundId][betIndex];
         return (b.player, b.betType, b.pick, b.amount, b.claimed);
     }
 
     /// @notice Check if a bet is a winner and return the payout amount (0 if loser).
-    function checkPayout(
-        uint256 roundId,
-        uint256 betIndex
-    ) external view returns (uint256) {
+    function checkPayout(uint256 roundId, uint256 betIndex) external view returns (uint256) {
         Round storage round = s_rounds[roundId];
-        if (
-            round.phase != RoundPhase.Settled &&
-            round.phase != RoundPhase.PartiallySettled
-        ) return 0;
+        if (round.phase != RoundPhase.Settled && round.phase != RoundPhase.PartiallySettled) return 0;
         Bet storage bet = s_roundBets[roundId][betIndex];
         if (round.phase == RoundPhase.PartiallySettled) {
-            if (
-                bet.betType != BetType.OpenSingle &&
-                bet.betType != BetType.OpenTrio
-            ) return 0;
+            if (bet.betType != BetType.OpenSingle && bet.betType != BetType.OpenTrio) return 0;
         }
         return _calculatePayout(round, bet);
     }
@@ -591,26 +484,19 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
         Round storage round = s_rounds[nextId];
         round.phase = RoundPhase.OpenBetting;
         round.openCutoff = uint40(block.timestamp + s_openDuration);
-        round.closeCutoff = uint40(
-            block.timestamp + s_openDuration + s_closeDuration
-        );
+        round.closeCutoff = uint40(block.timestamp + s_openDuration + s_closeDuration);
 
         emit RoundInitialized(nextId, round.openCutoff, round.closeCutoff);
     }
 
-    function _calculatePayout(
-        Round storage round,
-        Bet storage bet
-    ) private view returns (uint256) {
+    function _calculatePayout(Round storage round, Bet storage bet) private view returns (uint256) {
         uint256 wagerAmount = uint256(bet.amount);
 
         if (bet.betType == BetType.OpenSingle) {
-            return
-                bet.pick == round.openSingle ? wagerAmount * SINGLE_PAYOUT : 0;
+            return bet.pick == round.openSingle ? wagerAmount * SINGLE_PAYOUT : 0;
         }
         if (bet.betType == BetType.CloseSingle) {
-            return
-                bet.pick == round.closeSingle ? wagerAmount * SINGLE_PAYOUT : 0;
+            return bet.pick == round.closeSingle ? wagerAmount * SINGLE_PAYOUT : 0;
         }
         if (bet.betType == BetType.Pair) {
             return bet.pick == round.pairResult ? wagerAmount * PAIR_PAYOUT : 0;
@@ -619,28 +505,22 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
         // Trio bets
         uint16 winningTrio;
         if (bet.betType == BetType.OpenTrio) {
-            winningTrio = GenieMath.encodeTrio(
-                round.openD1,
-                round.openD2,
-                round.openD3
-            );
+            winningTrio = GenieMath.encodeTrio(round.openD1, round.openD2, round.openD3);
         } else {
             // CloseTrio
-            winningTrio = GenieMath.encodeTrio(
-                round.closeD1,
-                round.closeD2,
-                round.closeD3
-            );
+            winningTrio = GenieMath.encodeTrio(round.closeD1, round.closeD2, round.closeD3);
         }
 
         if (bet.pick != winningTrio) return 0;
 
         // Trio matched — payout depends on trio type
         GenieMath.TrioType trioType = GenieMath.trioTypeFromPick(bet.pick);
-        if (trioType == GenieMath.TrioType.Jackpot)
+        if (trioType == GenieMath.TrioType.Jackpot) {
             return wagerAmount * JACKPOT_TRIO_PAYOUT;
-        if (trioType == GenieMath.TrioType.Twin)
+        }
+        if (trioType == GenieMath.TrioType.Twin) {
             return wagerAmount * TWIN_TRIO_PAYOUT;
+        }
         return wagerAmount * UNIQUE_TRIO_PAYOUT;
     }
 }
