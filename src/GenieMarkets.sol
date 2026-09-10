@@ -194,7 +194,10 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
             }
             if (block.timestamp >= round.openCutoff) revert PastCutoff();
         } else {
-            if (round.phase != RoundPhase.CloseBetting) {
+            if (
+                round.phase != RoundPhase.OpenBetting && round.phase != RoundPhase.OpenPending
+                    && round.phase != RoundPhase.CloseBetting
+            ) {
                 revert WrongPhase(round.phase, RoundPhase.CloseBetting);
             }
             if (block.timestamp >= round.closeCutoff) revert PastCutoff();

@@ -278,11 +278,14 @@ contract GenieMarketsTest is Test {
         _placeBet(alice, roundId, GenieMarkets.BetType.Pair, 55, uint128(BET_AMOUNT));
     }
 
-    function test_revert_closeBetDuringOpenBetting() public {
+    function test_closeBetDuringOpenBetting() public {
         uint256 roundId = 1;
 
-        vm.expectRevert();
+        // Close bets should succeed even during OpenBetting phase
         _placeBet(alice, roundId, GenieMarkets.BetType.CloseSingle, 5, uint128(BET_AMOUNT));
+
+        // Assert it was placed successfully
+        assertEq(markets.getRoundBetCount(roundId), 1);
     }
 
     function test_revert_betAfterOpenCutoff() public {
@@ -297,9 +300,25 @@ contract GenieMarketsTest is Test {
         uint256 roundId = 1;
         _advancePastOpenCutoff();
         markets.requestOpenDraw(roundId);
-        // Now in OpenPending — cannot bet
+        // Now in OpenPending — cannot bet OpenSingle
         vm.expectRevert();
         _placeBet(alice, roundId, GenieMarkets.BetType.OpenSingle, 5, uint128(BET_AMOUNT));
+
+        // But CloseSingle SHOULD succeed during OpenPending
+        _placeBet(alice, roundId, GenieMarkets.BetType.CloseSingle, 5, uint128(BET_AMOUNT));
+        assertEq(markets.getRoundBetCount(roundId), 1);
+
+        // Simulate open draw fulfillment to move to CloseBetting
+        uint256 reqId = vrfCoordinator.lastRequestId();
+        vrfCoordinator.fulfillRandomWords(reqId, address(markets), 123);
+
+        // Advance to ClosePending
+        _advancePastCloseCutoff();
+        markets.requestCloseDraw(roundId);
+
+        // Now in ClosePending — cannot bet CloseSingle
+        vm.expectRevert();
+        _placeBet(alice, roundId, GenieMarkets.BetType.CloseSingle, 5, uint128(BET_AMOUNT));
     }
 
     // ──────────────────────────────────────────────
