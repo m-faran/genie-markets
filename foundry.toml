@@ -8,7 +8,6 @@ optimizer_runs = 200
 via_ir = true
 
 remappings = [
-    "@chainlink/=lib/chainlink-evm/",
     "@openzeppelin/=lib/openzeppelin-contracts/"
 ]
 
@@ -16,3 +15,7 @@ remappings = [
 runs = 1000
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+[rpc_endpoints]
+sepolia = "https://rpc.sepolia.org"
+monadTestnet = "https://testnet-rpc.monad.xyz"

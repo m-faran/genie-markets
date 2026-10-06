@@ -5,7 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {GenieMarkets} from "../src/GenieMarkets.sol";
 import {GenieMath} from "../src/GenieMath.sol";
 import {MockUSDC} from "./mocks/MockUSDC.sol";
-import {MockVRFCoordinator} from "./mocks/MockVRFCoordinator.sol";
+import {MockEntropy} from "./mocks/MockEntropy.sol";
 
 // ──────────────────────────────────────────────
 //  Test Contract
@@ -14,7 +14,7 @@ import {MockVRFCoordinator} from "./mocks/MockVRFCoordinator.sol";
 contract GenieMarketsTest is Test {
     GenieMarkets public markets;
     MockUSDC public usdc;
-    MockVRFCoordinator public vrfCoordinator;
+    MockEntropy public entropy;
 
     address public owner = makeAddr("owner");
     address public alice = makeAddr("alice");
@@ -29,13 +29,11 @@ contract GenieMarketsTest is Test {
         vm.startPrank(owner);
 
         usdc = new MockUSDC();
-        vrfCoordinator = new MockVRFCoordinator();
+        entropy = new MockEntropy();
 
         markets = new GenieMarkets(
-            address(vrfCoordinator),
-            1, // subscriptionId
-            bytes32(0), // keyHash
-            500_000, // callbackGasLimit
+            address(entropy),
+            entropy.defaultProvider(),
             address(usdc),
             OPEN_DURATION,
             CLOSE_DURATION
@@ -80,15 +78,17 @@ contract GenieMarketsTest is Test {
     }
 
     function _requestAndFulfillOpenDraw(uint256 roundId, uint256 rawNumber) internal {
-        markets.requestOpenDraw(roundId);
-        uint256 reqId = vrfCoordinator.lastRequestId();
-        vrfCoordinator.fulfillRandomWords(reqId, address(markets), rawNumber);
+        uint256 fee = entropy.getFee(entropy.defaultProvider());
+        markets.requestOpenDraw{value: fee}(roundId, bytes32(0));
+        uint64 reqSeq = entropy.sequenceNumber();
+        entropy.fulfillRequest(reqSeq, bytes32(rawNumber));
     }
 
     function _requestAndFulfillCloseDraw(uint256 roundId, uint256 rawNumber) internal {
-        markets.requestCloseDraw(roundId);
-        uint256 reqId = vrfCoordinator.lastRequestId();
-        vrfCoordinator.fulfillRandomWords(reqId, address(markets), rawNumber);
+        uint256 fee = entropy.getFee(entropy.defaultProvider());
+        markets.requestCloseDraw{value: fee}(roundId, bytes32(0));
+        uint64 reqSeq = entropy.sequenceNumber();
+        entropy.fulfillRequest(reqSeq, bytes32(rawNumber));
     }
 
     // ──────────────────────────────────────────────
@@ -245,8 +245,9 @@ contract GenieMarketsTest is Test {
 
     function test_revert_requestOpenDrawBeforeCutoff() public {
         uint256 roundId = 1;
+        uint256 fee = entropy.getFee(entropy.defaultProvider());
         vm.expectRevert(GenieMarkets.CutoffNotReached.selector);
-        markets.requestOpenDraw(roundId);
+        markets.requestOpenDraw{value: fee}(roundId, bytes32(0));
     }
 
     function test_revert_requestCloseDrawBeforeCutoff() public {
@@ -254,8 +255,9 @@ contract GenieMarketsTest is Test {
         _advancePastOpenCutoff();
         _requestAndFulfillOpenDraw(roundId, 123);
 
+        uint256 fee = entropy.getFee(entropy.defaultProvider());
         vm.expectRevert(GenieMarkets.CutoffNotReached.selector);
-        markets.requestCloseDraw(roundId);
+        markets.requestCloseDraw{value: fee}(roundId, bytes32(0));
     }
 
     function test_revert_openBetDuringCloseBetting() public {
@@ -299,7 +301,8 @@ contract GenieMarketsTest is Test {
     function test_revert_betDuringPendingPhase() public {
         uint256 roundId = 1;
         _advancePastOpenCutoff();
-        markets.requestOpenDraw(roundId);
+        uint256 fee = entropy.getFee(entropy.defaultProvider());
+        markets.requestOpenDraw{value: fee}(roundId, bytes32(0));
         // Now in OpenPending — cannot bet OpenSingle
         vm.expectRevert();
         _placeBet(alice, roundId, GenieMarkets.BetType.OpenSingle, 5, uint128(BET_AMOUNT));
@@ -309,12 +312,12 @@ contract GenieMarketsTest is Test {
         assertEq(markets.getRoundBetCount(roundId), 1);
 
         // Simulate open draw fulfillment to move to CloseBetting
-        uint256 reqId = vrfCoordinator.lastRequestId();
-        vrfCoordinator.fulfillRandomWords(reqId, address(markets), 123);
+        uint64 reqSeq = entropy.sequenceNumber();
+        entropy.fulfillRequest(reqSeq, bytes32(uint256(123)));
 
         // Advance to ClosePending
         _advancePastCloseCutoff();
-        markets.requestCloseDraw(roundId);
+        markets.requestCloseDraw{value: fee}(roundId, bytes32(0));
 
         // Now in ClosePending — cannot bet CloseSingle
         vm.expectRevert();
@@ -398,7 +401,8 @@ contract GenieMarketsTest is Test {
         _placeBet(bob, roundId, GenieMarkets.BetType.Pair, 55, uint128(BET_AMOUNT));
 
         _advancePastOpenCutoff();
-        markets.requestOpenDraw(roundId);
+        uint256 fee = entropy.getFee(entropy.defaultProvider());
+        markets.requestOpenDraw{value: fee}(roundId, bytes32(0));
         // VRF never responds...
 
         // Advance past emergency timeout (24h after openCutoff)
@@ -443,7 +447,8 @@ contract GenieMarketsTest is Test {
         _placeBet(bob, roundId, GenieMarkets.BetType.CloseSingle, 5, uint128(BET_AMOUNT));
 
         _advancePastCloseCutoff();
-        markets.requestCloseDraw(roundId);
+        uint256 fee = entropy.getFee(entropy.defaultProvider());
+        markets.requestCloseDraw{value: fee}(roundId, bytes32(0));
         // VRF never responds for close draw...
 
         (,, uint40 closeCutoff,,,,,,,,,,,,) = markets.s_rounds(roundId);
@@ -482,7 +487,8 @@ contract GenieMarketsTest is Test {
 
         _placeBet(bob, roundId, GenieMarkets.BetType.CloseSingle, 5, uint128(BET_AMOUNT));
         _advancePastCloseCutoff();
-        markets.requestCloseDraw(roundId);
+        uint256 fee = entropy.getFee(entropy.defaultProvider());
+        markets.requestCloseDraw{value: fee}(roundId, bytes32(0));
 
         (,, uint40 closeCutoff,,,,,,,,,,,,) = markets.s_rounds(roundId);
         vm.warp(uint256(closeCutoff) + 24 hours + 1);
@@ -575,8 +581,9 @@ contract GenieMarketsTest is Test {
         _placeBet(alice, roundId, GenieMarkets.BetType.OpenSingle, 5, uint128(BET_AMOUNT));
 
         _advancePastOpenCutoff();
-        markets.requestOpenDraw(roundId);
-        uint256 reqId = vrfCoordinator.lastRequestId();
+        uint256 fee = entropy.getFee(entropy.defaultProvider());
+        markets.requestOpenDraw{value: fee}(roundId, bytes32(0));
+        uint64 reqSeq = entropy.sequenceNumber();
 
         // Cancel before VRF arrives
         (, uint40 openCutoff,,,,,,,,,,,,,) = markets.s_rounds(roundId);
@@ -584,7 +591,7 @@ contract GenieMarketsTest is Test {
         markets.cancelStaleRound(roundId);
 
         // Now VRF arrives late — should be silently ignored
-        vrfCoordinator.fulfillRandomWords(reqId, address(markets), 123);
+        entropy.fulfillRequest(reqSeq, bytes32(uint256(123)));
 
         // Round should still be Cancelled
         (GenieMarkets.RoundPhase phase,,,,,,,,,,,,,,) = markets.s_rounds(roundId);

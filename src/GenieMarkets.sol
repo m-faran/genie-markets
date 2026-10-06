@@ -5,15 +5,15 @@ import {GenieMath} from "./GenieMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
-import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+import {IEntropy, IEntropyConsumer} from "./interfaces/IPythEntropy.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title GenieMarkets
-/// @notice Onchain daily number prediction protocol with Chainlink VRF randomness.
+/// @notice Onchain daily number prediction protocol with Pyth Entropy randomness.
 /// @dev House-funded model. USDC denomination. Pull-based claims with 30-day expiry.
 ///      Round lifecycle: OpenBetting → OpenPending → CloseBetting → ClosePending → Settled.
 ///      Emergency paths: Cancelled (stale Open VRF) or PartiallySettled (stale Close VRF).
-contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
+contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     // ──────────────────────────────────────────────
@@ -29,17 +29,13 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     uint32 public constant CLAIM_PERIOD = 30 days;
     uint32 public constant EMERGENCY_TIMEOUT = 24 hours;
 
-    uint16 private constant VRF_REQUEST_CONFIRMATIONS = 3;
-    uint32 private constant VRF_NUM_WORDS = 1;
-
     // ──────────────────────────────────────────────
     //  Immutables
     // ──────────────────────────────────────────────
 
     IERC20 public immutable i_usdc;
-    uint256 public immutable i_subscriptionId;
-    bytes32 public immutable i_keyHash;
-    uint32 public immutable i_callbackGasLimit;
+    IEntropy public immutable i_entropy;
+    address public immutable i_provider;
 
     // ──────────────────────────────────────────────
     //  Enums & Structs
@@ -68,8 +64,8 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
         uint40 openCutoff;
         uint40 closeCutoff;
         uint40 settledAt;
-        uint256 openVrfRequestId;
-        uint256 closeVrfRequestId;
+        uint64 openSequenceNumber;
+        uint64 closeSequenceNumber;
         // Winning digits (Genie-sorted)
         uint8 openD1;
         uint8 openD2;
@@ -100,8 +96,8 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
     mapping(uint256 => Round) public s_rounds;
     mapping(uint256 => Bet[]) internal s_roundBets;
-    mapping(uint256 => uint256) private s_vrfRequestToRound;
-    mapping(uint256 => bool) private s_vrfRequestIsClose;
+    mapping(uint64 => uint256) private s_sequenceToRound;
+    mapping(uint64 => bool) private s_sequenceIsClose;
 
     // ──────────────────────────────────────────────
     //  Events
@@ -110,7 +106,7 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     event BetPlaced(
         uint256 indexed roundId, uint256 betIndex, address indexed player, BetType betType, uint16 pick, uint128 amount
     );
-    event DrawRequested(uint256 indexed roundId, bool isClose, uint256 vrfRequestId);
+    event DrawRequested(uint256 indexed roundId, bool isClose, uint64 sequenceNumber);
     event DrawFulfilled(uint256 indexed roundId, bool isClose, uint8 d1, uint8 d2, uint8 d3, uint8 single);
     event RoundSettled(uint256 indexed roundId, uint8 pairResult);
     event RoundPartiallySettled(uint256 indexed roundId);
@@ -148,17 +144,14 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     // ──────────────────────────────────────────────
 
     constructor(
-        address vrfCoordinator,
-        uint256 subscriptionId,
-        bytes32 keyHash,
-        uint32 callbackGasLimit,
+        address entropy,
+        address provider,
         address usdc,
         uint32 _openDuration,
         uint32 _closeDuration
-    ) VRFConsumerBaseV2Plus(vrfCoordinator) {
-        i_subscriptionId = subscriptionId;
-        i_keyHash = keyHash;
-        i_callbackGasLimit = callbackGasLimit;
+    ) Ownable(msg.sender) {
+        i_entropy = IEntropy(entropy);
+        i_provider = provider;
         i_usdc = IERC20(usdc);
         s_openDuration = _openDuration;
         s_closeDuration = _closeDuration;
@@ -231,7 +224,7 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
     // ──────────────────────────────────────────────
 
     /// @notice Request the Open draw. Callable by anyone once the open cutoff has elapsed.
-    function requestOpenDraw(uint256 roundId) external {
+    function requestOpenDraw(uint256 roundId, bytes32 userRandomNumber) external payable {
         Round storage round = s_rounds[roundId];
         if (round.phase != RoundPhase.OpenBetting) {
             revert WrongPhase(round.phase, RoundPhase.OpenBetting);
@@ -240,26 +233,25 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
         round.phase = RoundPhase.OpenPending;
 
-        uint256 requestId = s_vrfCoordinator.requestRandomWords(
-            VRFV2PlusClient.RandomWordsRequest({
-                keyHash: i_keyHash,
-                subId: i_subscriptionId,
-                requestConfirmations: VRF_REQUEST_CONFIRMATIONS,
-                callbackGasLimit: i_callbackGasLimit,
-                numWords: VRF_NUM_WORDS,
-                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: false}))
-            })
-        );
+        uint256 fee = i_entropy.getFee(i_provider);
+        require(msg.value >= fee, "Insufficient fee");
+        uint64 sequenceNumber = i_entropy.requestWithCallback{value: fee}(i_provider, userRandomNumber);
 
-        round.openVrfRequestId = requestId;
-        s_vrfRequestToRound[requestId] = roundId;
-        s_vrfRequestIsClose[requestId] = false;
+        round.openSequenceNumber = sequenceNumber;
+        s_sequenceToRound[sequenceNumber] = roundId;
+        s_sequenceIsClose[sequenceNumber] = false;
 
-        emit DrawRequested(roundId, false, requestId);
+        // Refund excess fee if any
+        if (msg.value > fee) {
+            (bool success, ) = msg.sender.call{value: msg.value - fee}("");
+            require(success, "Refund failed");
+        }
+
+        emit DrawRequested(roundId, false, sequenceNumber);
     }
 
     /// @notice Request the Close draw. Callable by anyone once the close cutoff has elapsed.
-    function requestCloseDraw(uint256 roundId) external {
+    function requestCloseDraw(uint256 roundId, bytes32 userRandomNumber) external payable {
         Round storage round = s_rounds[roundId];
         if (round.phase != RoundPhase.CloseBetting) {
             revert WrongPhase(round.phase, RoundPhase.CloseBetting);
@@ -268,35 +260,37 @@ contract GenieMarkets is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
         round.phase = RoundPhase.ClosePending;
 
-        uint256 requestId = s_vrfCoordinator.requestRandomWords(
-            VRFV2PlusClient.RandomWordsRequest({
-                keyHash: i_keyHash,
-                subId: i_subscriptionId,
-                requestConfirmations: VRF_REQUEST_CONFIRMATIONS,
-                callbackGasLimit: i_callbackGasLimit,
-                numWords: VRF_NUM_WORDS,
-                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: false}))
-            })
-        );
+        uint256 fee = i_entropy.getFee(i_provider);
+        require(msg.value >= fee, "Insufficient fee");
+        uint64 sequenceNumber = i_entropy.requestWithCallback{value: fee}(i_provider, userRandomNumber);
 
-        round.closeVrfRequestId = requestId;
-        s_vrfRequestToRound[requestId] = roundId;
-        s_vrfRequestIsClose[requestId] = true;
+        round.closeSequenceNumber = sequenceNumber;
+        s_sequenceToRound[sequenceNumber] = roundId;
+        s_sequenceIsClose[sequenceNumber] = true;
 
-        emit DrawRequested(roundId, true, requestId);
+        // Refund excess fee if any
+        if (msg.value > fee) {
+            (bool success, ) = msg.sender.call{value: msg.value - fee}("");
+            require(success, "Refund failed");
+        }
+
+        emit DrawRequested(roundId, true, sequenceNumber);
     }
 
     // ──────────────────────────────────────────────
-    //  VRF Callback
+    //  Entropy Callback
     // ──────────────────────────────────────────────
 
-    /// @dev Called by VRF coordinator. O(1) — never iterates bets.
-    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
-        uint256 roundId = s_vrfRequestToRound[requestId];
-        bool isClose = s_vrfRequestIsClose[requestId];
+    /// @dev Called by Pyth Entropy. O(1) — never iterates bets.
+    function entropyCallback(uint64 sequenceNumber, address provider, bytes32 randomNumber) external override {
+        require(msg.sender == address(i_entropy), "Only Entropy");
+        require(provider == i_provider, "Wrong provider");
+        uint256 roundId = s_sequenceToRound[sequenceNumber];
+        bool isClose = s_sequenceIsClose[sequenceNumber];
         Round storage round = s_rounds[roundId];
 
-        (uint8 d1, uint8 d2, uint8 d3) = GenieMath.sortTrio(randomWords[0]);
+        uint256 randomWord = uint256(randomNumber);
+        (uint8 d1, uint8 d2, uint8 d3) = GenieMath.sortTrio(randomWord);
         uint8 single = GenieMath.deriveSingle(d1, d2, d3);
 
         if (!isClose) {
