@@ -26,8 +26,8 @@ library GenieMath {
     //  Core derivation functions
     // ──────────────────────────────────────────────
 
-    /// @notice Extract 3 digits from a raw VRF number and sort them in Genie order.
-    /// @param raw The random word from VRF. Only `raw % 1000` is used.
+    /// @notice Extract 3 digits from a raw Entropy number and sort them in Genie order.
+    /// @param raw The random word from Pyth Entropy. Only `raw % 1000` is used.
     /// @return d1 d2 d3 Digits sorted so _rank(d1) <= _rank(d2) <= _rank(d3).
     function sortTrio(uint256 raw) internal pure returns (uint8 d1, uint8 d2, uint8 d3) {
         uint256 n = raw % 1000;

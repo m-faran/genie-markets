@@ -5,7 +5,7 @@
 <h1 align="center">Genie Markets</h1>
 
 <p align="center">
-  Onchain daily number-prediction protocol with Chainlink VRF randomness.
+  Onchain daily number-prediction protocol with Pyth Entropy randomness.
 </p>
 
 <p align="center">
@@ -18,13 +18,13 @@
 
 ## Overview
 
-Genie Markets is a **house-funded, USDC-denominated** number prediction market where players wager on digit outcomes derived from Chainlink VRF v2.5 randomness. Each round has two draws — **Open** and **Close** — generating three random digits each. Players can bet on Singles, Trios, or cross-draw Pairs.
+Genie Markets is a **house-funded, USDC-denominated** number prediction market where players wager on digit outcomes derived from Pyth Entropy randomness. Each round has two draws — **Open** and **Close** — generating three random digits each. Players can bet on Singles, Trios, or cross-draw Pairs.
 
-All payouts are pull-based with a **30-day claim window**. A 24-hour emergency timeout protects against stale VRF responses.
+All payouts are pull-based with a **30-day claim window**. A 24-hour emergency timeout protects against stale Entropy responses.
 
 ## How It Works
 
-Each round runs for 24 hours across two market windows. Chainlink VRF settles each window independently, producing five prediction types in total.
+Each round runs for 24 hours across two market windows. Pyth Entropy settles each window independently, producing five prediction types in total.
 
 ### 🕒 Market Windows
 
@@ -39,7 +39,7 @@ Each round runs for 24 hours across two market windows. Chainlink VRF settles ea
 
 Derived via `(digit1 + digit2 + digit3) mod 10`. There are two variants: **Open Single** (from the Open draw) and **Close Single** (from the Close draw).
 
-*Example:* VRF returns digits `1, 2, 3` → Single = `(1+2+3) % 10` = **6**.
+*Example:* Pyth Entropy returns digits `1, 2, 3` → Single = `(1+2+3) % 10` = **6**.
 
 **2. Pairs (00–99) — 90× payout**
 
@@ -77,8 +77,8 @@ There are two variants: **Open Trio** and **Close Trio**. The Open and Close Sin
 ### 🔄 Round Flow
 
 1. Players place wagers on singles, trios, and pairs during the Open window.
-2. **Open draw** — Chainlink VRF returns a 3-digit number (e.g., `123`). This is the **Open Trio**. The **Open Single** is derived from it (e.g., `6`).
-3. **Close draw** — A second VRF call returns another 3-digit number (e.g., `456`). This is the **Close Trio**. The **Close Single** is derived (e.g., `5`), and the **Pair** is formed from both singles (e.g., `65`). The round settles and the next round begins automatically.
+2. **Open draw** — Pyth Entropy returns a 3-digit number (e.g., `123`). This is the **Open Trio**. The **Open Single** is derived from it (e.g., `6`).
+3. **Close draw** — A second Entropy call returns another 3-digit number (e.g., `456`). This is the **Close Trio**. The **Close Single** is derived (e.g., `5`), and the **Pair** is formed from both singles (e.g., `65`). The round settles and the next round begins automatically.
 
 **Round Settlement Example:**
 
@@ -95,7 +95,7 @@ There are two variants: **Open Trio** and **Close Trio**. The Open and Close Sin
 ```
 OpenBetting → OpenPending → CloseBetting → ClosePending → Settled
      │              │                              │
-     │         (VRF callback)                 (VRF callback → next round)
+     │         (Entropy callback)                 (Entropy callback → next round)
      │              │                              │
      └──── (stale 24h) ──→ Cancelled         (stale 24h) ──→ PartiallySettled
 ```
@@ -104,9 +104,9 @@ OpenBetting → OpenPending → CloseBetting → ClosePending → Settled
 
 All wagers are locked in a non-custodial smart contract. Payouts are **pull-based** — winners call `claimWinnings()` within a 30-day claim window. Draw requests (`requestOpenDraw()`, `requestCloseDraw()`) and emergency recovery (`cancelStaleRound()`) are **permissionless** — callable by anyone, no keeper dependency.
 
-**Emergency paths:** If VRF doesn't respond within 24 hours:
-- Stale Open VRF → **Cancelled** — all bets refundable via `claimRefund()`.
-- Stale Close VRF → **PartiallySettled** — open-side winners can claim, close-side and Pair bets refundable.
+**Emergency paths:** If Pyth Entropy doesn't respond within 24 hours:
+- Stale Open Entropy → **Cancelled** — all bets refundable via `claimRefund()`.
+- Stale Close Entropy → **PartiallySettled** — open-side winners can claim, close-side and Pair bets refundable.
 
 ## Architecture
 
@@ -123,7 +123,7 @@ test/
 ├── GenieMath.t.sol      # 15 unit tests + fuzz tests for math library
 └── mocks/
     ├── MockUSDC.sol
-    └── MockVRFCoordinator.sol
+    └── MockEntropy.sol
 ```
 
 ### Dependencies
@@ -131,7 +131,7 @@ test/
 | Dependency | Purpose |
 |:---|:---|
 | [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) | `SafeERC20`, `ReentrancyGuard` |
-| [Chainlink EVM](https://github.com/smartcontractkit/chainlink-evm) | `VRFConsumerBaseV2Plus`, `VRFV2PlusClient` |
+| [Pyth Network](https://github.com/pyth-network/pyth-crosschain) | `IEntropy`, `IEntropyConsumer` |
 | [Forge Std](https://github.com/foundry-rs/forge-std) | Testing utilities |
 
 ## Getting Started
@@ -166,11 +166,11 @@ Fuzz tests run with 1,000 iterations by default (configurable in `foundry.toml`)
 
 - **Reentrancy** — All external USDC transfers are guarded by OpenZeppelin's `ReentrancyGuard`.
 - **SafeERC20** — All USDC interactions use `SafeERC20` to handle non-standard return values.
-- **Stale VRF recovery** — If VRF never responds, a 24-hour timeout lets anyone cancel the stuck round and refund players.
+- **Stale Entropy recovery** — If Pyth Entropy never responds, a 24-hour timeout lets anyone cancel the stuck round and refund players.
 
 ## Known Issues
 
-- **Permissionless draws** — `requestOpenDraw()`, `requestCloseDraw()`, and `cancelStaleRound()` are callable by anyone — no keeper. Chainlink Automation/Keeper will be added in next version.
+- **Permissionless draws** — `requestOpenDraw()`, `requestCloseDraw()`, and `cancelStaleRound()` are callable by anyone — no keeper. Pyth Automation/Keeper will be added in next version.
 - **Admin can withdraw funds** - before the settlement of the funds the admin can withdraw funds and rug the protocol/users. Logic to not allow the admin to withdraw more funds than the current open round wagers and all user winning claims will be added in next version. 
 
 ## 📜 License

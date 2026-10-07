@@ -12,7 +12,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 /// @notice Onchain daily number prediction protocol with Pyth Entropy randomness.
 /// @dev House-funded model. USDC denomination. Pull-based claims with 30-day expiry.
 ///      Round lifecycle: OpenBetting → OpenPending → CloseBetting → ClosePending → Settled.
-///      Emergency paths: Cancelled (stale Open VRF) or PartiallySettled (stale Close VRF).
+///      Emergency paths: Cancelled (stale Open Entropy) or PartiallySettled (stale Close Entropy).
 contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
@@ -47,8 +47,8 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
         CloseBetting,
         ClosePending,
         Settled,
-        PartiallySettled, // Open settled, Close cancelled (stale Close VRF)
-        Cancelled // Entire round cancelled (stale Open VRF)
+        PartiallySettled, // Open settled, Close cancelled (stale Close Entropy)
+        Cancelled // Entire round cancelled (stale Open Entropy)
     }
 
     enum BetType {
@@ -298,7 +298,7 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
         uint8 single = GenieMath.deriveSingle(d1, d2, d3);
 
         if (!isClose) {
-            // Silently ignore if round was already cancelled (stale VRF arrived late)
+            // Silently ignore if round was already cancelled (stale Entropy arrived late)
             if (round.phase != RoundPhase.OpenPending) return;
 
             round.openD1 = d1;
@@ -309,7 +309,7 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
 
             emit DrawFulfilled(roundId, false, d1, d2, d3, single);
         } else {
-            // Silently ignore if round was already partially settled (stale VRF arrived late)
+            // Silently ignore if round was already partially settled (stale Entropy arrived late)
             if (round.phase != RoundPhase.ClosePending) return;
 
             round.closeD1 = d1;
@@ -391,11 +391,11 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
     }
 
     // ──────────────────────────────────────────────
-    //  Emergency: Stale VRF Recovery
+    //  Emergency: Stale Entropy Recovery
     // ──────────────────────────────────────────────
 
-    /// @notice Cancel a round stuck in a pending VRF state. Callable by anyone after 24h timeout.
-    /// @dev If Open VRF stale → full cancel. If Close VRF stale → partial settle (Open winners paid, Close refunded).
+    /// @notice Cancel a round stuck in a pending Entropy state. Callable by anyone after 24h timeout.
+    /// @dev If Open Entropy stale → full cancel. If Close Entropy stale → partial settle (Open winners paid, Close refunded).
     function cancelStaleRound(uint256 roundId) external {
         Round storage round = s_rounds[roundId];
 
