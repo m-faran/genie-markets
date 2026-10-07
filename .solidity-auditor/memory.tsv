@@ -1,0 +1,11 @@
+#solidity-auditor-memory v1	key	status	scans	sha	title	kind
+geniemarkets|cancelstaleround|stale-anchor	NEW	1	1f5bc89	Staleness is measured from the market cutoff, not the draw request	FINDING
+geniemarkets|requestopendraw|uninitialized-round-reachable	NEW	1	1f5bc89	An uninitialized round id can be drawn and settled	LEAD
+geniemarkets|requestopendraw|raw-call-refund-reentrant	NEW	1	1f5bc89	Request functions refund excess ETH with a raw call and no guard	LEAD
+geniemarkets|checkpayout|view-write-divergence	NEW	1	1f5bc89	checkPayout ignores the claimed flag and the claim window	LEAD
+geniemarkets|withdrawbankroll|unbounded-admin-withdraw	NEW	1	1f5bc89	Owner withdrawal is not capped to the house bankroll	LEAD
+deploygeniemarkets|run|wrong-chain-token-address	NEW	1	1f5bc89	The deploy script keeps the Ethereum Sepolia token on Monad	LEAD
+geniemarkets|cancelstaleround|no-emergency-path-before-draw	NEW	1	1f5bc89	Nothing exits OpenBetting except a draw request	FINDING
+geniemarkets|requestopendraw|state-after-external-call	NEW	1	1f5bc89	The sequence map is written after the request that keys it	LEAD
+geniemarkets|setdurations|unbounded-duration-brick	NEW	1	1f5bc89	Durations have no upper bound and trap the next round	LEAD
+geniemarkets|entropycallback|provider-output-unchecked	NEW	1	1f5bc89	One provider word settles the round with no validation	LEAD

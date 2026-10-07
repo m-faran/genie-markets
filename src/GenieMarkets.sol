@@ -64,6 +64,8 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
         uint40 openCutoff;
         uint40 closeCutoff;
         uint40 settledAt;
+        uint40 openRequestedAt;
+        uint40 closeRequestedAt;
         uint64 openSequenceNumber;
         uint64 closeSequenceNumber;
         // Winning digits (Genie-sorted)
@@ -232,6 +234,7 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
         if (block.timestamp < round.openCutoff) revert CutoffNotReached();
 
         round.phase = RoundPhase.OpenPending;
+        round.openRequestedAt = uint40(block.timestamp);
 
         uint256 fee = i_entropy.getFee(i_provider);
         require(msg.value >= fee, "Insufficient fee");
@@ -259,6 +262,7 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
         if (block.timestamp < round.closeCutoff) revert CutoffNotReached();
 
         round.phase = RoundPhase.ClosePending;
+        round.closeRequestedAt = uint40(block.timestamp);
 
         uint256 fee = i_entropy.getFee(i_provider);
         require(msg.value >= fee, "Insufficient fee");
@@ -395,16 +399,18 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
     function cancelStaleRound(uint256 roundId) external {
         Round storage round = s_rounds[roundId];
 
-        if (round.phase == RoundPhase.OpenPending) {
-            if (block.timestamp <= round.openCutoff + EMERGENCY_TIMEOUT) {
+        if (round.phase == RoundPhase.OpenPending || round.phase == RoundPhase.OpenBetting) {
+            uint256 referenceTime = round.phase == RoundPhase.OpenPending ? round.openRequestedAt : round.openCutoff;
+            if (block.timestamp <= referenceTime + EMERGENCY_TIMEOUT) {
                 revert NotStaleYet();
             }
             round.phase = RoundPhase.Cancelled;
             round.settledAt = uint40(block.timestamp);
             emit RoundCancelled(roundId);
             _initNextRound();
-        } else if (round.phase == RoundPhase.ClosePending) {
-            if (block.timestamp <= round.closeCutoff + EMERGENCY_TIMEOUT) {
+        } else if (round.phase == RoundPhase.ClosePending || round.phase == RoundPhase.CloseBetting) {
+            uint256 referenceTime = round.phase == RoundPhase.ClosePending ? round.closeRequestedAt : round.closeCutoff;
+            if (block.timestamp <= referenceTime + EMERGENCY_TIMEOUT) {
                 revert NotStaleYet();
             }
             round.phase = RoundPhase.PartiallySettled;
@@ -465,7 +471,11 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
     function checkPayout(uint256 roundId, uint256 betIndex) external view returns (uint256) {
         Round storage round = s_rounds[roundId];
         if (round.phase != RoundPhase.Settled && round.phase != RoundPhase.PartiallySettled) return 0;
+        if (block.timestamp > round.settledAt + CLAIM_PERIOD) return 0;
+
         Bet storage bet = s_roundBets[roundId][betIndex];
+        if (bet.claimed) return 0;
+
         if (round.phase == RoundPhase.PartiallySettled) {
             if (bet.betType != BetType.OpenSingle && bet.betType != BetType.OpenTrio) return 0;
         }

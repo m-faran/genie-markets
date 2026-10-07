@@ -1,0 +1,4 @@
+name	GenieMarkets
+mode	default
+files	./src/GenieMath.sol ./src/GenieMarkets.sol ./script/DeployGenieMarkets.s.sol
+passes_planned	1

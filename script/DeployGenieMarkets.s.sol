@@ -11,9 +11,8 @@ contract DeployGenieMarkets is Script {
         address entropy = 0x36825bf3Fbdf5a29E2d5148bfe7Dcf7B5639e320;
         address defaultProvider = 0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344;
         
-        // Use a mock USDC or a known ERC20 on Monad Testnet.
-        // Replace this with the actual Mock USDC address deployed on Monad testnet.
-        address usdc = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
+        // Official Monad Testnet USDC Address
+        address usdc = 0x534b2f3A21130d7a60830c2Df862319e593943A3;
 
         uint32 openDuration = 21 hours;
         uint32 closeDuration = 3 hours;

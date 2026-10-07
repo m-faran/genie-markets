@@ -1,0 +1,9 @@
+name	GenieMarkets
+mode	default
+files	./src/GenieMath.sol ./src/GenieMarkets.sol ./script/DeployGenieMarkets.s.sol
+passes_planned	2
+mem_before	0
+mem_after	6
+mem_sha	1f5bc89
+mem_after	10
+mem_sha	1f5bc89
