@@ -145,13 +145,9 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
     //  Constructor
     // ──────────────────────────────────────────────
 
-    constructor(
-        address entropy,
-        address provider,
-        address usdc,
-        uint32 _openDuration,
-        uint32 _closeDuration
-    ) Ownable(msg.sender) {
+    constructor(address entropy, address provider, address usdc, uint32 _openDuration, uint32 _closeDuration)
+        Ownable(msg.sender)
+    {
         i_entropy = IEntropy(entropy);
         i_provider = provider;
         i_usdc = IERC20(usdc);
@@ -246,7 +242,7 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
 
         // Refund excess fee if any
         if (msg.value > fee) {
-            (bool success, ) = msg.sender.call{value: msg.value - fee}("");
+            (bool success,) = msg.sender.call{value: msg.value - fee}("");
             require(success, "Refund failed");
         }
 
@@ -274,7 +270,7 @@ contract GenieMarkets is IEntropyConsumer, ReentrancyGuard, Ownable {
 
         // Refund excess fee if any
         if (msg.value > fee) {
-            (bool success, ) = msg.sender.call{value: msg.value - fee}("");
+            (bool success,) = msg.sender.call{value: msg.value - fee}("");
             require(success, "Refund failed");
         }
 

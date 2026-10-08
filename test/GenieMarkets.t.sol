@@ -31,13 +31,8 @@ contract GenieMarketsTest is Test {
         usdc = new MockUSDC();
         entropy = new MockEntropy();
 
-        markets = new GenieMarkets(
-            address(entropy),
-            entropy.defaultProvider(),
-            address(usdc),
-            OPEN_DURATION,
-            CLOSE_DURATION
-        );
+        markets =
+            new GenieMarkets(address(entropy), entropy.defaultProvider(), address(usdc), OPEN_DURATION, CLOSE_DURATION);
 
         // Fund bankroll
         usdc.mint(owner, BANKROLL);
@@ -68,12 +63,12 @@ contract GenieMarketsTest is Test {
     }
 
     function _advancePastOpenCutoff() internal {
-        (, uint40 openCutoff,,,,,,,,,,,,,) = markets.s_rounds(markets.s_currentRoundId());
+        (, uint40 openCutoff,,,,,,,,,,,,,,,) = markets.s_rounds(markets.s_currentRoundId());
         vm.warp(openCutoff);
     }
 
     function _advancePastCloseCutoff() internal {
-        (,, uint40 closeCutoff,,,,,,,,,,,,) = markets.s_rounds(markets.s_currentRoundId());
+        (,, uint40 closeCutoff,,,,,,,,,,,,,,) = markets.s_rounds(markets.s_currentRoundId());
         vm.warp(closeCutoff);
     }
 
@@ -118,7 +113,7 @@ contract GenieMarketsTest is Test {
         _requestAndFulfillOpenDraw(roundId, 123); // → trio 123, single 6
 
         // Phase should now be CloseBetting
-        (GenieMarkets.RoundPhase phase,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
+        (GenieMarkets.RoundPhase phase,,,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         assertEq(uint8(phase), uint8(GenieMarkets.RoundPhase.CloseBetting));
 
         // Place Close Single bet: VRF raw = 456 → sorted 456 → single = (4+5+6)%10 = 5
@@ -129,7 +124,7 @@ contract GenieMarketsTest is Test {
         _requestAndFulfillCloseDraw(roundId, 456); // → trio 456, single 5, pair = 65
 
         // Round should be Settled
-        (phase,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
+        (phase,,,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         assertEq(uint8(phase), uint8(GenieMarkets.RoundPhase.Settled));
 
         // Alice's Open Single bet on 6 should win (9x)
@@ -406,12 +401,12 @@ contract GenieMarketsTest is Test {
         // VRF never responds...
 
         // Advance past emergency timeout (24h after openCutoff)
-        (, uint40 openCutoff,,,,,,,,,,,,,) = markets.s_rounds(roundId);
+        (, uint40 openCutoff,,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         vm.warp(uint256(openCutoff) + 24 hours + 1);
 
         markets.cancelStaleRound(roundId);
 
-        (GenieMarkets.RoundPhase phase,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
+        (GenieMarkets.RoundPhase phase,,,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         assertEq(uint8(phase), uint8(GenieMarkets.RoundPhase.Cancelled));
 
         // Both can claim refunds
@@ -451,12 +446,12 @@ contract GenieMarketsTest is Test {
         markets.requestCloseDraw{value: fee}(roundId, bytes32(0));
         // VRF never responds for close draw...
 
-        (,, uint40 closeCutoff,,,,,,,,,,,,) = markets.s_rounds(roundId);
+        (,, uint40 closeCutoff,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         vm.warp(uint256(closeCutoff) + 24 hours + 1);
 
         markets.cancelStaleRound(roundId);
 
-        (GenieMarkets.RoundPhase phase,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
+        (GenieMarkets.RoundPhase phase,,,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         assertEq(uint8(phase), uint8(GenieMarkets.RoundPhase.PartiallySettled));
 
         // Alice's Open Single bet on 6 is a winner — can claim
@@ -490,7 +485,7 @@ contract GenieMarketsTest is Test {
         uint256 fee = entropy.getFee(entropy.defaultProvider());
         markets.requestCloseDraw{value: fee}(roundId, bytes32(0));
 
-        (,, uint40 closeCutoff,,,,,,,,,,,,) = markets.s_rounds(roundId);
+        (,, uint40 closeCutoff,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         vm.warp(uint256(closeCutoff) + 24 hours + 1);
         markets.cancelStaleRound(roundId);
 
@@ -586,7 +581,7 @@ contract GenieMarketsTest is Test {
         uint64 reqSeq = entropy.sequenceNumber();
 
         // Cancel before VRF arrives
-        (, uint40 openCutoff,,,,,,,,,,,,,) = markets.s_rounds(roundId);
+        (, uint40 openCutoff,,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         vm.warp(uint256(openCutoff) + 24 hours + 1);
         markets.cancelStaleRound(roundId);
 
@@ -594,7 +589,7 @@ contract GenieMarketsTest is Test {
         entropy.fulfillRequest(reqSeq, bytes32(uint256(123)));
 
         // Round should still be Cancelled
-        (GenieMarkets.RoundPhase phase,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
+        (GenieMarkets.RoundPhase phase,,,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         assertEq(uint8(phase), uint8(GenieMarkets.RoundPhase.Cancelled));
     }
 

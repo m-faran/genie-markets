@@ -10,7 +10,7 @@ contract DeployGenieMarkets is Script {
         // Monad Testnet Configuration
         address entropy = 0x36825bf3Fbdf5a29E2d5148bfe7Dcf7B5639e320;
         address defaultProvider = 0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344;
-        
+
         // Official Monad Testnet USDC Address
         address usdc = 0x534b2f3A21130d7a60830c2Df862319e593943A3;
 
@@ -19,9 +19,7 @@ contract DeployGenieMarkets is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        GenieMarkets markets = new GenieMarkets(
-            entropy, defaultProvider, usdc, openDuration, closeDuration
-        );
+        GenieMarkets markets = new GenieMarkets(entropy, defaultProvider, usdc, openDuration, closeDuration);
 
         vm.stopBroadcast();
 

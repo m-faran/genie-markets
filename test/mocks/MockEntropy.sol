@@ -11,12 +11,9 @@ contract MockEntropy is IEntropy {
     mapping(uint64 => address) public requestors;
     mapping(uint64 => address) public providers;
 
-    function requestWithCallback(
-        address provider,
-        bytes32 userRandomNumber
-    ) external payable returns (uint64) {
+    function requestWithCallback(address provider, bytes32 userRandomNumber) external payable returns (uint64) {
         require(msg.value >= fee, "Insufficient fee");
-        
+
         sequenceNumber++;
         requestors[sequenceNumber] = msg.sender;
         providers[sequenceNumber] = provider;
@@ -27,7 +24,7 @@ contract MockEntropy is IEntropy {
     function fulfillRequest(uint64 reqSeqNumber, bytes32 randomNumber) external {
         address requestor = requestors[reqSeqNumber];
         address provider = providers[reqSeqNumber];
-        
+
         IEntropyConsumer(requestor).entropyCallback(reqSeqNumber, provider, randomNumber);
     }
 
