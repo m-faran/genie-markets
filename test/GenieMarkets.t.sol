@@ -101,7 +101,7 @@ contract GenieMarketsTest is Test {
         console.log("Bob initial balance:", bobInitialBal / 1e6);
 
         // Phase: OpenBetting — place Open Single bet on digit 6
-        // VRF raw = 123 → sorted 123 → single = (1+2+3)%10 = 6
+        // Entropy raw = 123 → sorted 123 → single = (1+2+3)%10 = 6
         _placeBet(alice, roundId, GenieMarkets.BetType.OpenSingle, 6, uint128(BET_AMOUNT));
         // Place a Pair bet: openSingle=6, let's guess closeSingle will be 4 → pair = 64
         _placeBet(bob, roundId, GenieMarkets.BetType.Pair, 64, uint128(BET_AMOUNT));
@@ -116,7 +116,7 @@ contract GenieMarketsTest is Test {
         (GenieMarkets.RoundPhase phase,,,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         assertEq(uint8(phase), uint8(GenieMarkets.RoundPhase.CloseBetting));
 
-        // Place Close Single bet: VRF raw = 456 → sorted 456 → single = (4+5+6)%10 = 5
+        // Place Close Single bet: Entropy raw = 456 → sorted 456 → single = (4+5+6)%10 = 5
         _placeBet(alice, roundId, GenieMarkets.BetType.CloseSingle, 5, uint128(BET_AMOUNT));
 
         // Advance past close cutoff and trigger close draw
@@ -178,7 +178,7 @@ contract GenieMarketsTest is Test {
 
     function test_trioBet_uniqueWin() public {
         uint256 roundId = 1;
-        // Bet on trio 123 (Unique). VRF raw = 213 → sorted = 123.
+        // Bet on trio 123 (Unique). Entropy raw = 213 → sorted = 123.
         _placeBet(alice, roundId, GenieMarkets.BetType.OpenTrio, 123, uint128(BET_AMOUNT));
 
         _advancePastOpenCutoff();
@@ -193,7 +193,7 @@ contract GenieMarketsTest is Test {
 
     function test_trioBet_twinWin() public {
         uint256 roundId = 1;
-        // Bet on trio 112 (Twin). VRF raw = 211 → sorted = 112.
+        // Bet on trio 112 (Twin). Entropy raw = 211 → sorted = 112.
         _placeBet(alice, roundId, GenieMarkets.BetType.OpenTrio, 112, uint128(BET_AMOUNT));
 
         _advancePastOpenCutoff();
@@ -207,7 +207,7 @@ contract GenieMarketsTest is Test {
 
     function test_trioBet_jackpotWin() public {
         uint256 roundId = 1;
-        // Bet on trio 555 (Jackpot). VRF raw = 555.
+        // Bet on trio 555 (Jackpot). Entropy raw = 555.
         _placeBet(alice, roundId, GenieMarkets.BetType.OpenTrio, 555, uint128(BET_AMOUNT));
 
         _advancePastOpenCutoff();
@@ -221,7 +221,7 @@ contract GenieMarketsTest is Test {
 
     function test_trioBet_genieSort_withZero() public {
         uint256 roundId = 1;
-        // Bet on trio 130 (Genie sorted: rank 1<3<10). VRF raw = 310 → sorted = 130.
+        // Bet on trio 130 (Genie sorted: rank 1<3<10). Entropy raw = 310 → sorted = 130.
         _placeBet(alice, roundId, GenieMarkets.BetType.OpenTrio, 130, uint128(BET_AMOUNT));
 
         _advancePastOpenCutoff();
@@ -387,10 +387,10 @@ contract GenieMarketsTest is Test {
     }
 
     // ──────────────────────────────────────────────
-    //  Emergency Cancel — Full Cancel (Stale Open VRF)
+    //  Emergency Cancel — Full Cancel (Stale Open Entropy)
     // ──────────────────────────────────────────────
 
-    function test_fullCancel_staleOpenVRF() public {
+    function test_fullCancel_staleOpenEntropy() public {
         uint256 roundId = 1;
         _placeBet(alice, roundId, GenieMarkets.BetType.OpenSingle, 5, uint128(BET_AMOUNT));
         _placeBet(bob, roundId, GenieMarkets.BetType.Pair, 55, uint128(BET_AMOUNT));
@@ -398,7 +398,7 @@ contract GenieMarketsTest is Test {
         _advancePastOpenCutoff();
         uint256 fee = entropy.getFee(entropy.defaultProvider());
         markets.requestOpenDraw{value: fee}(roundId, bytes32(0));
-        // VRF never responds...
+        // Entropy never responds...
 
         // Advance past emergency timeout (24h after openCutoff)
         (, uint40 openCutoff,,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
@@ -425,10 +425,10 @@ contract GenieMarketsTest is Test {
     }
 
     // ──────────────────────────────────────────────
-    //  Emergency Cancel — Partial (Stale Close VRF)
+    //  Emergency Cancel — Partial (Stale Close Entropy)
     // ──────────────────────────────────────────────
 
-    function test_partialCancel_staleCloseVRF() public {
+    function test_partialCancel_staleCloseEntropy() public {
         uint256 roundId = 1;
 
         // Open bets
@@ -444,7 +444,7 @@ contract GenieMarketsTest is Test {
         _advancePastCloseCutoff();
         uint256 fee = entropy.getFee(entropy.defaultProvider());
         markets.requestCloseDraw{value: fee}(roundId, bytes32(0));
-        // VRF never responds for close draw...
+        // Entropy never responds for close draw...
 
         (,, uint40 closeCutoff,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         vm.warp(uint256(closeCutoff) + 24 hours + 1);
@@ -568,10 +568,10 @@ contract GenieMarketsTest is Test {
     }
 
     // ──────────────────────────────────────────────
-    //  Stale VRF arrives late (should be no-op)
+    //  Stale Entropy arrives late (should be no-op)
     // ──────────────────────────────────────────────
 
-    function test_lateVRF_afterCancel_isNoOp() public {
+    function test_lateEntropy_afterCancel_isNoOp() public {
         uint256 roundId = 1;
         _placeBet(alice, roundId, GenieMarkets.BetType.OpenSingle, 5, uint128(BET_AMOUNT));
 
@@ -580,12 +580,12 @@ contract GenieMarketsTest is Test {
         markets.requestOpenDraw{value: fee}(roundId, bytes32(0));
         uint64 reqSeq = entropy.sequenceNumber();
 
-        // Cancel before VRF arrives
+        // Cancel before Entropy arrives
         (, uint40 openCutoff,,,,,,,,,,,,,,,) = markets.s_rounds(roundId);
         vm.warp(uint256(openCutoff) + 24 hours + 1);
         markets.cancelStaleRound(roundId);
 
-        // Now VRF arrives late — should be silently ignored
+        // Now Entropy arrives late — should be silently ignored
         entropy.fulfillRequest(reqSeq, bytes32(uint256(123)));
 
         // Round should still be Cancelled
